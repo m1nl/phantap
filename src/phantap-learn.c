@@ -35,7 +35,7 @@ int debug = 0;
 #include "netlink.h"
 #include "phantap-learn.h"
 
-#define OPT_ARGS "b:c:i:v:"
+#define OPT_ARGS "b:c:i:v:s:"
 
 // Filter ethernet/IPv4 broadcast, a subset of IPv4 mulitcast (we only want local & low traffic multicast),
 // and ethernet IPv4 ARP packets (we never know). Exclude tagged traffic as libpcap/linux include it by default
@@ -60,11 +60,14 @@ int debug = 0;
 #define DNS_SERVER_PORT 53
 #define NTP_SERVER_PORT 123
 
-struct netinfo cur_ni = {};
+struct netinfo cur_ni = {0};
+struct in_addr service_ip = {0};
+
 pcap_t *pcap_handle = NULL;
 char *exec_block_net = NULL;
 char *exec_conf_net = NULL;
 char *ifname = NULL;
+char *service_ip_string = NULL;
 struct nl_sock *nl_sock = NULL;
 uint ifindex = 0;
 
@@ -75,6 +78,7 @@ static void usage(void)
                     "  -c <exec_conf_net>\tthe command to run on network conf changes\n"
                     "  -i <listen-interface>\tthe interface to listen on\n"
                     "  -v <debug-level>\tprint some debug info (level > 0)\n"
+                    "  -s <service-ip>\tset internal service IP (i.e. proxy) behind the gateway\n"
                     "\nTo show/flush neigh/route:\n"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0)
                     "ip neigh show proto " str(PHANTAP_RTPROTO) "\n"
@@ -138,7 +142,9 @@ static void _handle_response(const struct ether_header *eth_hdr, const struct ip
     {
         cur_ni.changed = true;
         ETHER_CPY(&cur_ni.victim_mac, eth_hdr->ether_dhost);
+        DEBUG(1, "Victim MAC: %s\n", ether_ntoa(&cur_ni.victim_mac));
         cur_ni.victim_ip = ip_hdr->ip_dst;
+        DEBUG(1, "Victim IP: %s\n", inet_ntoa(cur_ni.victim_ip));
     }
 }
 
@@ -166,6 +172,25 @@ static void handle_ntp(const struct ether_header *eth_hdr, const struct ip *ip_h
 static void handle_internet(const struct ether_header *eth_hdr, const struct ip *ip_hdr)
 {
     if (IN_ADDR_NORMAL(ip_hdr->ip_src) && !IN_ADDR_RFC1918(ip_hdr->ip_src) && IN_ADDR_RFC1918(ip_hdr->ip_dst))
+    {
+        cur_ni.changed = true;
+        ETHER_CPY(&cur_ni.victim_mac, eth_hdr->ether_dhost);
+        DEBUG(1, "Victim MAC: %s\n", ether_ntoa(&cur_ni.victim_mac));
+        cur_ni.victim_ip = ip_hdr->ip_dst;
+        DEBUG(1, "Victim IP: %s\n", inet_ntoa(cur_ni.victim_ip));
+        ETHER_CPY(&cur_ni.gateway_mac, eth_hdr->ether_shost);
+        DEBUG(1, "Gateway MAC: %s\n", ether_ntoa(&cur_ni.gateway_mac));
+    }
+}
+
+static void handle_service_ip(const struct ether_header *eth_hdr, const struct ip *ip_hdr)
+{
+    if (service_ip.s_addr == 0)
+    {
+        return;
+    }
+
+    if (IN_ADDR_EQ(service_ip, ip_hdr->ip_src) && IN_ADDR_RFC1918(ip_hdr->ip_dst))
     {
         cur_ni.changed = true;
         ETHER_CPY(&cur_ni.victim_mac, eth_hdr->ether_dhost);
@@ -319,6 +344,8 @@ static void handle_packet_ip(const struct ether_header *eth_hdr, const uint32_t 
 
     handle_internet(eth_hdr, ip_hdr);
 
+    handle_service_ip(eth_hdr, ip_hdr);
+
     switch (ip_hdr->ip_p)
     {
     case IPPROTO_UDP:
@@ -432,6 +459,9 @@ int main(int argc, char **argv)
         case 'v':
             debug = atoi(optarg);
             break;
+        case 's':
+            service_ip_string = optarg;
+            break;
         }
     }
 
@@ -454,6 +484,14 @@ int main(int argc, char **argv)
         ERROR("interface (-i) is mandatory !!!\n\n");
         usage();
         goto exit_err;
+    }
+
+    if (service_ip_string != NULL)
+    {
+        if (inet_aton(service_ip_string, &service_ip) == 0) {
+            ERROR("service ip (-s) is not valid !!!\n\n");
+            goto exit_err;
+        }
     }
 
     if((nl_sock = create_nl_sock()) == NULL)
