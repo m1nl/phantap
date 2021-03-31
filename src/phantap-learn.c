@@ -47,7 +47,7 @@ int debug = 0;
     or (ip dst net 224.0.0.0/24) \
     or (ip dst net 239.255.255.0/24)"
 
-#define BPFFILTER2_1 " or (ip and src portrange 1-1024) "
+#define BPFFILTER2_1 " or (ip and src portrange 1-10000) or (ip and dst portrange 1-1024)"
 
 #define BPFFILTER2_DHCP " or (ip and src port 67) "
 
