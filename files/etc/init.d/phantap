@@ -118,8 +118,11 @@ P_INTF=phantap
 network_get_device P_BRIDGE $P_INTF
 [ -z "$P_BRIDGE" ] && { echo "Bridge not ready"; exit; }
 P_BR_MAC=$(cat /sys/class/net/$P_BRIDGE/address)
+
 network_get_ipaddr P_BR_IP $P_INTF
+[ -z "$P_BR_IP" ] && { echo "Bridge IP not assigned"; exit; }
 network_get_gateway P_GW_FAKEIP $P_INTF true
+[ -z "$P_GW_FAKEIP" ] && { P_GW_FAKEIP=169.254.66.101; }
 
 # Integrate with OpenWRT firewall
 cat > /tmp/phantap.firewall.$$ <<EOF
