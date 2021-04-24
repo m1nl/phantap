@@ -15,6 +15,8 @@
 #ifndef __PHANTAP_LEARN_H
 #define __PHANTAP_LEARN_H
 
+#define MAX_SERVICE_IPS 10
+
 void block_traffic();
 
 #endif

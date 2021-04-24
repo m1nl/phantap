@@ -15,10 +15,17 @@ boot()
 
 start_service()
 {
+    config_load phantap
+
     procd_open_instance "phantap"
     procd_set_param command /usr/sbin/phantap-learn -i br-phantap -v1
     procd_append_param command -b '/etc/init.d/phantap block_net'
     procd_append_param command -c '/etc/init.d/phantap conf_net'
+
+    service_ip=""
+    config_list_foreach main service_ip _append_service_ip
+    [ ! -z "$service_ip" ] && procd_append_param command -s "$service_ip"
+
     procd_set_param stdout 1
     procd_set_param stderr 1
     procd_close_instance
@@ -122,7 +129,7 @@ P_BR_MAC=$(cat /sys/class/net/$P_BRIDGE/address)
 network_get_ipaddr P_BR_IP $P_INTF
 [ -z "$P_BR_IP" ] && { echo "Bridge IP not assigned"; exit; }
 network_get_gateway P_GW_FAKEIP $P_INTF true
-[ -z "$P_GW_FAKEIP" ] && { P_GW_FAKEIP=169.254.66.101; }
+[ -z "$P_GW_FAKEIP" ] && { P_GW_FAKEIP="169.254.66.101"; }
 
 # Integrate with OpenWRT firewall
 cat > /tmp/phantap.firewall.$$ <<EOF
@@ -172,4 +179,14 @@ ebtables -t filter -A phantap-drop -j DROP
 
 _handle_onconfig() {
     /bin/sh -c "$1" || echo "'$1' failed"
+}
+
+_append_service_ip() {
+    local ip="$1"
+
+    if [ -z "$service_ip" ] ; then
+      service_ip="${ip}"
+    else
+      service_ip="${service_ip},${ip}"
+    fi
 }

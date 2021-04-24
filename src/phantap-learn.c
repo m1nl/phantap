@@ -61,7 +61,8 @@ int debug = 0;
 #define NTP_SERVER_PORT 123
 
 struct netinfo cur_ni = {0};
-struct in_addr service_ip = {0};
+struct in_addr service_ip[MAX_SERVICE_IPS];
+uint service_ip_num = 0;
 
 pcap_t *pcap_handle = NULL;
 char *exec_block_net = NULL;
@@ -78,7 +79,7 @@ static void usage(void)
                     "  -c <exec_conf_net>\tthe command to run on network conf changes\n"
                     "  -i <listen-interface>\tthe interface to listen on\n"
                     "  -v <debug-level>\tprint some debug info (level > 0)\n"
-                    "  -s <service-ip>\tset internal service IP (i.e. proxy) behind the gateway\n"
+                    "  -s <service-ips>\tcomma-separated list of internal IPs (i.e. proxy) behind the gateway\n"
                     "\nTo show/flush neigh/route:\n"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0)
                     "ip neigh show proto " str(PHANTAP_RTPROTO) "\n"
@@ -185,20 +186,28 @@ static void handle_internet(const struct ether_header *eth_hdr, const struct ip 
 
 static void handle_service_ip(const struct ether_header *eth_hdr, const struct ip *ip_hdr)
 {
-    if (service_ip.s_addr == 0)
+    uint index = 0;
+
+    if (service_ip_num == 0)
     {
         return;
     }
 
-    if (IN_ADDR_EQ(service_ip, ip_hdr->ip_src) && IN_ADDR_RFC1918(ip_hdr->ip_dst))
+    while (index < service_ip_num && service_ip[index].s_addr != 0)
     {
-        cur_ni.changed = true;
-        ETHER_CPY(&cur_ni.victim_mac, eth_hdr->ether_dhost);
-        DEBUG(1, "Victim MAC: %s\n", ether_ntoa(&cur_ni.victim_mac));
-        cur_ni.victim_ip = ip_hdr->ip_dst;
-        DEBUG(1, "Victim IP: %s\n", inet_ntoa(cur_ni.victim_ip));
-        ETHER_CPY(&cur_ni.gateway_mac, eth_hdr->ether_shost);
-        DEBUG(1, "Gateway MAC: %s\n", ether_ntoa(&cur_ni.gateway_mac));
+        if (IN_ADDR_EQ(service_ip[index], ip_hdr->ip_src) && IN_ADDR_RFC1918(ip_hdr->ip_dst))
+        {
+            cur_ni.changed = true;
+            ETHER_CPY(&cur_ni.victim_mac, eth_hdr->ether_dhost);
+            DEBUG(1, "Victim MAC: %s\n", ether_ntoa(&cur_ni.victim_mac));
+            cur_ni.victim_ip = ip_hdr->ip_dst;
+            DEBUG(1, "Victim IP: %s\n", inet_ntoa(cur_ni.victim_ip));
+            ETHER_CPY(&cur_ni.gateway_mac, eth_hdr->ether_shost);
+            DEBUG(1, "Gateway MAC: %s\n", ether_ntoa(&cur_ni.gateway_mac));
+            break;
+        }
+
+        index++;
     }
 }
 
@@ -442,6 +451,7 @@ int main(int argc, char **argv)
     int ch, pcapstatus, datalink;
     int status = EXIT_FAILURE;
     char errbuf[PCAP_ERRBUF_SIZE];
+    char *tk;
 
     while ((ch = getopt(argc, argv, OPT_ARGS)) != -1)
     {
@@ -486,11 +496,22 @@ int main(int argc, char **argv)
         goto exit_err;
     }
 
+    memset(service_ip, 0, sizeof(service_ip));
+
     if (service_ip_string != NULL)
     {
-        if (inet_aton(service_ip_string, &service_ip) == 0) {
-            ERROR("service ip (-s) is not valid !!!\n\n");
-            goto exit_err;
+        tk = strtok(service_ip_string, ",");
+
+        while (tk != NULL && service_ip_num < MAX_SERVICE_IPS)
+        {
+            if (inet_aton(tk, &service_ip[service_ip_num]) == 0)
+            {
+                ERROR("service ip (-s) is not valid !!!\n\n");
+                goto exit_err;
+            }
+
+            service_ip_num++;
+            tk = strtok(NULL, ",");
         }
     }
 
