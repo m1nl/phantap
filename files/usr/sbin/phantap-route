@@ -17,4 +17,4 @@ network_get_gateway P_GW_FAKEIP $P_INTF true
 NET="$1"
 [ -z "$NET" ] && { echo "No argument given"; exit; }
 
-/sbin/route add $NET gw $P_GW_FAKEIP dev $P_BRIDGE
+/sbin/ip route add $NET via $P_GW_FAKEIP dev $P_BRIDGE
