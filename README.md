@@ -6,7 +6,7 @@ PhanTap is an ‘invisible’ network tap aimed at red teams. With limited physi
 PhanTap will analyze traffic on the network and mask its traffic as the victim device.
 It can mount a tunnel back to a remote server, giving the user a foothold in the network for further analysis and pivoting.
 PhanTap is an OpenWrt package and should be compatible with any device. The physical device used for our testing is currently a small, inexpensive router, the [GL.iNet GL-AR150](https://www.gl-inet.com/products/gl-ar150/).
-You can find a detailed blogpost describing PhanTap [here](https://www.nccgroup.trust/us/our-research/phantap/?research=Public+tools)
+You can find a detailed blogpost describing PhanTap [here](https://research.nccgroup.com/2019/09/30/phantap-phantom-tap-making-networks-spookier-one-packet-at-a-time/)
 
 ## Features:
 
@@ -42,25 +42,28 @@ opkg install phantap
 * Either reboot the device, or run `/etc/init.d/phantap setup`.
 * Get the interface names from that device:
 ```
-# uci show network | grep ifname
-network.loopback.ifname='lo'
-network.lan.ifname='eth1'
-network.wan.ifname='eth0'
-network.wan6.ifname='eth0'
+# uci show network | grep -E 'device=|ports='
+network.loopback.device='lo'
+network.@device[0].ports='eth0'
+network.lan.device='br-lan'
+network.wan.device='eth1'
+network.wan6.device='eth1'
+network.phantap.device='br-phantap'
 ```
 In this example we are using a GL-AR150, which only has 2 interfaces.
 
 * Remove the interfaces from any network interface they might be used by, if that's the case, via the following commands in the cli
 (assuming we are using a GL-AR150):
 ```
-uci delete network.lan.ifname
-uci delete network.wan.ifname
-uci delete network.wan6.ifname
+uci delete network.@device[0].ports
+uci delete network.wan.device
+uci delete network.wan6.device
 ```
 * Add the interfaces to the phantap bridge and restart the network service via the following commands in the cli
 (assuming we are using a GL-AR150):
 ```
-uci set network.phantap.ifname='eth0 eth1'
+uci add_list network.br_phantap.ports='eth0'
+uci add_list network.br_phantap.ports='eth1'
 uci commit network
 /etc/init.d/network reload
 ```
